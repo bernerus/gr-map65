@@ -1,0 +1,26 @@
+title: gr-map65
+version: 1.0
+brief: Send I/Q from GNU Radio to MAP65, EME65 and QMAP over UDP
+tags:
+  - ham radio
+  - EME
+  - MAP65
+  - EME65
+  - QMAP
+  - Linrad
+  - network
+author:
+  - Christer Bernérus, SM6FBQ <bernerus@gmail.com>
+copyright_owner:
+  - Christer Bernérus, SM6FBQ
+license: GPL-3.0-or-later
+gr_supported_version:
+  - 3.10
+repo: # Put the URL of the repository here
+website:
+description: |-
+  A UDP sink that sends complex I/Q as Linrad timf2 network packets, the
+  format read by the wideband EME receivers MAP65, EME65 (WS suite) and QMAP.
+  Supports single and dual polarisation (xpol), int16 and float32 samples,
+  and 95.238, 96, 128, 192 and 256 kHz sample rates.
+file_format: 1

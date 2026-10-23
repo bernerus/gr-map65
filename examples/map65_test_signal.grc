@@ -1,0 +1,132 @@
+options:
+  parameters:
+    author: Christer Bernérus, SM6FBQ
+    category: '[GRC Hier Blocks]'
+    description: Test signal (noise plus a carrier) for MAP65/EME65/QMAP over UDP
+    generate_options: no_gui
+    id: map65_test_signal
+    output_language: python
+    run: 'True'
+    run_options: run
+    title: MAP65 test signal
+  states:
+    coordinate: [8, 8]
+    rotation: 0
+    state: enabled
+
+blocks:
+- name: samp_rate
+  id: variable
+  parameters:
+    comment: Must match the sample rate selected in MAP65/EME65/QMAP
+    value: '96000'
+  states:
+    coordinate: [200, 12]
+    rotation: 0
+    state: enabled
+- name: center_freq
+  id: variable
+  parameters:
+    comment: ''
+    value: 144.125e6
+  states:
+    coordinate: [304, 12]
+    rotation: 0
+    state: enabled
+- name: carrier
+  id: analog_sig_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    amp: '0.003'
+    comment: Carrier 10 kHz above the centre, well above the noise
+    freq: '10000'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    offset: '0'
+    phase: '0'
+    samp_rate: samp_rate
+    showports: 'False'
+    type: complex
+    waveform: analog.GR_COS_WAVE
+  states:
+    coordinate: [16, 120]
+    rotation: 0
+    state: enabled
+- name: noise
+  id: analog_noise_source_x
+  parameters:
+    affinity: ''
+    alias: ''
+    amp: '0.01'
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    noise_type: analog.GR_GAUSSIAN
+    seed: '0'
+    type: complex
+  states:
+    coordinate: [16, 280]
+    rotation: 0
+    state: enabled
+- name: add
+  id: blocks_add_xx
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    num_inputs: '2'
+    type: complex
+    vlen: '1'
+  states:
+    coordinate: [256, 216]
+    rotation: 0
+    state: enabled
+- name: throttle
+  id: blocks_throttle2
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: MAP65/EME65/QMAP need the data in real time
+    ignoretag: 'True'
+    limit: auto
+    maximum: '0.1'
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    samples_per_second: samp_rate
+    type: complex
+    vlen: '1'
+  states:
+    coordinate: [376, 224]
+    rotation: 0
+    state: enabled
+- name: map65_udp_sink
+  id: map65_udp_sink
+  parameters:
+    affinity: ''
+    alias: ''
+    center_freq: center_freq
+    comment: ''
+    host: 127.0.0.1
+    inverted: 'False'
+    port: '50004'
+    samp_rate: samp_rate
+    sample_format: int16
+    scale: '32767'
+    xpol: 'False'
+  states:
+    coordinate: [568, 192]
+    rotation: 0
+    state: enabled
+
+connections:
+- [add, '0', throttle, '0']
+- [carrier, '0', add, '0']
+- [noise, '0', add, '1']
+- [throttle, '0', map65_udp_sink, '0']
+
+metadata:
+  file_format: 1
+  grc_version: 3.10.12.0

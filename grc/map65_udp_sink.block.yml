@@ -1,0 +1,102 @@
+id: map65_udp_sink
+label: MAP65 UDP Sink
+category: '[MAP65]'
+flags: [ python ]
+
+parameters:
+-   id: host
+    label: Host
+    dtype: string
+    default: 127.0.0.1
+-   id: port
+    label: Port
+    dtype: int
+    default: '50004'
+-   id: center_freq
+    label: Center freq (Hz)
+    dtype: real
+    default: 144.125e6
+-   id: samp_rate
+    label: Sample rate
+    dtype: real
+    default: '96000'
+    options: ['96000', '192000', 2e6/21, '128000', '256000']
+    option_labels: [96 kHz, 192 kHz (EME65/QMAP), 95.238 kHz, 128 kHz (QMAP), 256 kHz (QMAP)]
+-   id: xpol
+    label: Polarisation
+    dtype: bool
+    default: 'False'
+    options: ['False', 'True']
+    option_labels: [Single, Xpol (X + Y)]
+-   id: sample_format
+    label: Sample format
+    dtype: enum
+    default: int16
+    options: [int16, float32]
+    option_labels: [int16, float32]
+-   id: scale
+    label: Scale
+    dtype: real
+    default: '32767'
+-   id: inverted
+    label: Inverted spectrum
+    dtype: bool
+    default: 'False'
+    options: ['True', 'False']
+    option_labels: ['Yes', 'No']
+
+inputs:
+-   label: ${ 'x' if xpol else 'in' }
+    domain: stream
+    dtype: complex
+-   label: y
+    domain: stream
+    dtype: complex
+    hide: ${ not xpol }
+-   label: freq
+    id: freq
+    domain: message
+    optional: true
+
+asserts:
+- ${ port > 0 and port < 65536 }
+- ${ scale > 0 }
+
+templates:
+    imports: from gnuradio import map65
+    make: |-
+        map65.udp_sink(
+            host=${ host },
+            port=${ port },
+            center_freq=${ center_freq },
+            samp_rate=${ samp_rate },
+            sample_format='${ sample_format }',
+            xpol=${ xpol },
+            scale=${ scale },
+            inverted=${ inverted },
+        )
+    callbacks:
+    - set_center_freq(${ center_freq })
+    - set_scale(${ scale })
+    - set_inverted(${ inverted })
+
+documentation: |-
+    Sends complex I/Q as Linrad timf2 UDP packets (1416 bytes) readable by
+    MAP65, EME65 and QMAP. Point the receiver at the same UDP port
+    (default 50004) and select the same sample rate there. 192 kHz needs
+    EME65 (restart it after changing) or QMAP; 128/256 kHz are QMAP only.
+
+    Xpol: feed the X and Y polarisation receivers to inputs x and y and
+    enable Xpol in MAP65/EME65 (QMAP is single polarisation only). Packets use userx_no 2 (int16) or -2 (float32).
+
+    The data must arrive in real time (from SDR hardware or throttled);
+    MAP65/EME65 time the data by the PC clock.
+
+    Input level: with Scale = 32767, full scale |I|,|Q| = 1.0 maps to int16
+    full scale. Keep the signal well below that and adjust Scale until the
+    Rx noise level reads near 0 dB.
+
+    The 'freq' message input sets the centre frequency in Hz, either a number
+    or a pair like ('fq' . 144.1e6).
+
+file_format: 1

@@ -1,0 +1,7 @@
+gr-map65 provides blocks for feeding the wideband EME receivers MAP65,
+EME65 and QMAP from GNU Radio. The Python namespace is gnuradio.map65:
+
+    from gnuradio import map65
+    help(map65.udp_sink)
+
+See README.md in the top directory for setup and the packet format.
