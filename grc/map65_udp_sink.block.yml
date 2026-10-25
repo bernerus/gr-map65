@@ -39,11 +39,17 @@ parameters:
     dtype: real
     default: '32767'
 -   id: inverted
-    label: Inverted spectrum
+    label: Flip spectrum
     dtype: bool
     default: 'False'
     options: ['True', 'False']
     option_labels: ['Yes', 'No']
+-   id: target
+    label: Receiver
+    dtype: enum
+    default: map65
+    options: [map65, qmap, none]
+    option_labels: [MAP65 / EME65, QMAP, None (no shift)]
 
 inputs:
 -   label: ${ 'x' if xpol else 'in' }
@@ -74,11 +80,13 @@ templates:
             xpol=${ xpol },
             scale=${ scale },
             inverted=${ inverted },
+            target='${ target }',
         )
     callbacks:
     - set_center_freq(${ center_freq })
     - set_scale(${ scale })
     - set_inverted(${ inverted })
+    - set_target('${ target }')
 
 documentation: |-
     Sends complex I/Q as Linrad timf2 UDP packets (1416 bytes) readable by
@@ -92,9 +100,21 @@ documentation: |-
     The data must arrive in real time (from SDR hardware or throttled);
     MAP65/EME65 time the data by the PC clock.
 
-    Input level: with Scale = 32767, full scale |I|,|Q| = 1.0 maps to int16
-    full scale. Keep the signal well below that and adjust Scale until the
-    Rx noise level reads near 0 dB.
+    Input level: samples are multiplied by Scale before packing. Adjust Scale
+    until the Rx noise level in MAP65/EME65 reads about 30 dB with no signals
+    present (noise RMS about 32 counts per I/Q component). With Scale = 32767,
+    |I|,|Q| = 1.0 is int16 full scale.
+
+    Spectrum orientation: the block converts GNU Radio's I/Q sign convention
+    to the Linrad/MAP65 one, so a normal stream shows the right way round.
+    Set Flip spectrum only if the source itself is mirrored.
+
+    Receiver: MAP65, EME65 and QMAP do not FFT-shift their spectrum. They
+    expect the centre frequency at fs/2 in the stream, and MAP65/EME65 a
+    further 1270.46 Hz up (an offset inherited from Linrad). The block shifts
+    the stream, whose centre is at DC, accordingly. With the wrong setting the
+    whole spectrum is displaced, e.g. by -49.27 kHz at 96 kHz with None.
+    None sends the stream unshifted, for other timf2 consumers.
 
     The 'freq' message input sets the centre frequency in Hz, either a number
     or a pair like ('fq' . 144.1e6).

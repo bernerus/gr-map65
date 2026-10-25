@@ -38,7 +38,7 @@ blocks:
   parameters:
     affinity: ''
     alias: ''
-    amp: '0.003'
+    amp: '0.0003'
     comment: Carrier 10 kHz above the centre, well above the noise
     freq: '10000'
     maxoutbuf: '0'
@@ -58,7 +58,7 @@ blocks:
   parameters:
     affinity: ''
     alias: ''
-    amp: '0.01'
+    amp: '0.0014'
     comment: ''
     maxoutbuf: '0'
     minoutbuf: '0'

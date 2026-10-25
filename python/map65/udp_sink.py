@@ -23,7 +23,7 @@ Packet layout (1416 bytes, little endian, Linrad NET_RX_STRUCT):
     20      uint16   block_no           packet counter, wraps at 65536
     22      int8     userx_no           +-1 = one RF channel, +-2 = two (xpol);
                                         positive = int16, negative = float32
-    23      int8     passband_direction 1 = normal, -1 = inverted
+    23      int8     passband_direction always 1 (ignored by MAP65/EME65)
     24      ...      1392 bytes payload
 
     userx_no  samples/packet  sample layout
@@ -31,6 +31,25 @@ Packet layout (1416 bytes, little endian, Linrad NET_RX_STRUCT):
     -1        174             I Q            (float32)
      2        174             Ix Qx Iy Qy    (int16)
     -2         87             Ix Qx Iy Qy    (float32)
+
+Linrad and MAP65/EME65 use the opposite I/Q sign convention to GNU Radio:
+a tone above the centre frequency is I - jQ (see mapsim.f90 in MAP65), and
+their FFT uses the e^(+j) kernel. The block therefore sends Q negated, so a
+normal GNU Radio stream shows the right way round.
+
+The receivers do not FFT-shift their spectrum: FFT bin 0 (DC of the stream)
+is taken as the lower edge of the passband and bin NFFT/2 (fs/2) as its
+centre. MAP65 and EME65 also place the dial frequency a further 1.27046 kHz
+up, an offset inherited from Linrad's timf2 output and hard-coded in
+widegraph.cpp, plotter.cpp and map65a.f90:
+
+    freq = bin_freq + nkhz_center - 48.0 - 1.27046      (kHz)
+
+QMAP has dropped the 1.27046 kHz from its display (qmap/widegraph.cpp).
+A GNU Radio stream has the centre frequency at DC, so the block shifts it up
+by fs/2 (+ 1270.46 Hz for MAP65/EME65) to land on the receiver's centre.
+Without that shift a tone 10 kHz above the centre is shown 39.27 kHz below
+it in MAP65/EME65. The target parameter selects the shift.
 
 The sample rate is not carried in the packets; the receiver must be set to
 the same rate. MAP65 supports 95238 and 96000 Hz, EME65 also 192000 Hz,
@@ -52,6 +71,11 @@ PAYLOAD_BYTES = 1392
 FORMAT_INT16 = 'int16'
 FORMAT_FLOAT32 = 'float32'
 SUPPORTED_RATES = (2e6 / 21, 96000.0, 128000.0, 192000.0, 256000.0)
+TARGET_MAP65 = 'map65'   # MAP65, EME65: centre at fs/2 + 1270.46 Hz
+TARGET_QMAP = 'qmap'     # QMAP: centre at fs/2
+TARGET_NONE = 'none'     # No shift: centre at DC, as in the GNU Radio stream
+# Dial frequency offset above fs/2 that MAP65/EME65 inherit from Linrad
+MAP65_OFFSET_HZ = 1270.46
 # Resync the packet timestamps to the wall clock if they drift this much
 MAX_DRIFT_S = 0.5
 
@@ -67,14 +91,16 @@ class udp_sink(gr.sync_block):
         sample_format: 'int16' or 'float32'.
         xpol: False = one input (userx_no +-1), True = inputs X and Y (userx_no +-2).
         scale: Samples are multiplied by this before packing. int16 samples are clipped.
-        inverted: True sets passband_direction=-1 (spectrum inverted).
+        inverted: True flips the spectrum, for sources whose spectrum is mirrored.
+        target: 'map65' (MAP65, EME65), 'qmap' or 'none'. Selects the frequency
+            shift that puts the centre frequency where the receiver expects it.
 
     Message input 'freq' takes a centre frequency in Hz, either as a plain
     number or as a pair (symbol . number), e.g. ('fq' . 144.1e6)."""
 
     def __init__(self, host='127.0.0.1', port=50004, center_freq=144.125e6,
                  samp_rate=96000, sample_format=FORMAT_INT16, xpol=False,
-                 scale=32767.0, inverted=False):
+                 scale=32767.0, inverted=False, target=TARGET_MAP65):
         self.nchan = 2 if xpol else 1
         gr.sync_block.__init__(
             self,
@@ -98,6 +124,8 @@ class udp_sink(gr.sync_block):
         self.center_freq = center_freq
         self.scale = scale
         self.inverted = inverted
+        self.phase = 0.0
+        self.set_target(target)
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -122,6 +150,18 @@ class udp_sink(gr.sync_block):
 
     def set_inverted(self, inverted):
         self.inverted = bool(inverted)
+
+    def set_target(self, target):
+        if target == TARGET_MAP65:
+            shift = self.samp_rate / 2 + MAP65_OFFSET_HZ
+        elif target == TARGET_QMAP:
+            shift = self.samp_rate / 2
+        elif target == TARGET_NONE:
+            shift = 0.0
+        else:
+            raise ValueError("target must be 'map65', 'qmap' or 'none'")
+        self.target = target
+        self.dphase = 2 * np.pi * shift / self.samp_rate
 
     def handle_freq(self, msg):
         if pmt.is_pair(msg):
@@ -148,6 +188,16 @@ class udp_sink(gr.sync_block):
 
     def _payloads(self, data):
         """Pack (nchan, npackets * spp) samples into (npackets, 1392) bytes."""
+        if self.inverted:
+            data = np.conj(data)
+        if self.dphase:
+            # Move the centre frequency from DC to where the receiver expects it.
+            # The phase runs on across calls, so the shift has no discontinuities.
+            n = data.shape[1]
+            data = data * np.exp(1j * (self.phase + self.dphase * np.arange(n)))
+            self.phase = (self.phase + self.dphase * n) % (2 * np.pi)
+        # GNU Radio I + jQ -> Linrad/MAP65 convention I - jQ
+        data = np.conj(data).astype(np.complex64)
         # (nchan, n) complex -> (n, nchan * 2) floats: I Q  or  Ix Qx Iy Qy
         iq = data.T.copy().view(np.float32) * self.scale
         if self.userx_no > 0:
@@ -164,8 +214,7 @@ class udp_sink(gr.sync_block):
 
         for payload in self._payloads(data[:, :npackets * spp]):
             header = HEADER.pack(self.center_freq / 1e6, self._timestamp_ms(), 0.0,
-                                 self.ptr, self.block_no, self.userx_no,
-                                 -1 if self.inverted else 1)
+                                 self.ptr, self.block_no, self.userx_no, 1)
             try:
                 self.sock.sendto(header + payload.tobytes(), self.dest)
                 self.send_failed = False
